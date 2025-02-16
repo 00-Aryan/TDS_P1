@@ -470,8 +470,8 @@ async def run_task(task: str):
             A10(**json.loads(arguments))
 
 
-        if "B12"== task_code:
-            B12(**json.loads(arguments))
+        if "B10"== task_code:
+            B10(**json.loads(arguments))
         if "B3" == task_code:
             B3(**json.loads(arguments))
         if "B5" == task_code:

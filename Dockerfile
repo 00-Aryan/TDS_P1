@@ -1,20 +1,21 @@
 FROM python:3.12-slim-bookworm
 
-# Install dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
 
 # Download and install uv
 ADD https://astral.sh/uv/install.sh /uv-installer.sh
 RUN sh /uv-installer.sh && rm /uv-installer.sh
 
-# Install FastAPI and Uvicorn
-RUN pip install fastapi uvicorn
-
 # Ensure the installed binary is on the `PATH`
 ENV PATH="/root/.local/bin:$PATH"
 
 # Set up the application directory
 WORKDIR /app
+
+# Copy and install dependencies before copying the entire app
+COPY requirements.txt /app/
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
 COPY app.py /app

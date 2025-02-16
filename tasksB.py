@@ -1,93 +1,110 @@
-# Phase B: LLM-based Automation Agent for DataWorks Solutions
-
-# B1 & B2: Security Checks
 import os
+import json
+import requests
+import sqlite3
+import duckdb
+import subprocess
+import shutil
+import markdown
+import csv
+from fastapi import FastAPI, HTTPException
+from pathlib import Path
+from PIL import Image
+from pydub import AudioSegment
+import speech_recognition as sr
+from git import Repo
 
-def B12(filepath):
-    if filepath.startswith('/data'):
-        # raise PermissionError("Access outside /data is not allowed.")
-        # print("Access outside /data is not allowed.")
-        return True
-    else:
-        return False
+app = FastAPI()
 
-# B3: Fetch Data from an API
-def B3(url, save_path):
-    if not B12(save_path):
-        return None
-    import requests
+DATA_DIR = Path("/data")
+
+def ensure_data_path(filepath):
+    """Ensure the file path is within /data."""
+    path = Path(filepath).resolve()
+    if not path.is_relative_to(DATA_DIR):
+        raise HTTPException(status_code=403, detail="Access outside /data is forbidden")
+    return path
+
+def B3(api_url: str, filename: str):
+    """Fetch data from an API and save it."""
+    response = requests.get(api_url)
+    response.raise_for_status()
+    save_path = ensure_data_path(filename)
+    with open(save_path, "w", encoding="utf-8") as file:
+        json.dump(response.json(), file, indent=4)
+
+def B4(repo_url: str, commit_message: str, file_to_change: str, new_content: str):
+    """Clone a git repo, modify a file, and commit the change."""
+    repo_path = ensure_data_path("/data/repo")
+    if repo_path.exists():
+        shutil.rmtree(repo_path)
+    Repo.clone_from(repo_url, repo_path)
+    file_path = repo_path / file_to_change
+    ensure_data_path(file_path)
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(new_content)
+    repo = Repo(repo_path)
+    repo.git.add(file_path)
+    repo.index.commit(commit_message)
+    repo.remote().push()
+
+def B5(db_path: str, query: str, output_file: str, use_duckdb: bool = False):
+    """Run a SQL query on SQLite or DuckDB."""
+    db_path = ensure_data_path(db_path)
+    output_file = ensure_data_path(output_file)
+    conn = duckdb.connect(str(db_path)) if use_duckdb else sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute(query)
+    result = cursor.fetchall()
+    conn.close()
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(result, f)
+
+def B6(url: str, output_file: str):
+    """Scrape a website and save data."""
     response = requests.get(url)
-    with open(save_path, 'w') as file:
+    response.raise_for_status()
+    output_path = ensure_data_path(output_file)
+    with open(output_path, "w", encoding="utf-8") as file:
         file.write(response.text)
 
-# B4: Clone a Git Repo and Make a Commit
-# def clone_git_repo(repo_url, commit_message):
-#     import subprocess
-#     subprocess.run(["git", "clone", repo_url, "/data/repo"])
-#     subprocess.run(["git", "-C", "/data/repo", "commit", "-m", commit_message])
+def B7(image_path: str, output_path: str, size=(100, 100)):
+    """Compress or resize an image."""
+    image_path = ensure_data_path(image_path)
+    output_path = ensure_data_path(output_path)
+    image = Image.open(image_path)
+    image.thumbnail(size)
+    image.save(output_path)
 
-# B5: Run SQL Query
-def B5(db_path, query, output_filename):
-    if not B12(db_path):
-        return None
-    import sqlite3, duckdb
-    conn = sqlite3.connect(db_path) if db_path.endswith('.db') else duckdb.connect(db_path)
-    cur = conn.cursor()
-    cur.execute(query)
-    result = cur.fetchall()
-    conn.close()
-    with open(output_filename, 'w') as file:
-        file.write(str(result))
-    return result
+def B8(audio_path: str, output_file: str):
+    """Transcribe audio from an MP3 file."""
+    audio_path = ensure_data_path(audio_path)
+    output_file = ensure_data_path(output_file)
+    audio = AudioSegment.from_mp3(audio_path)
+    wav_path = str(audio_path).replace(".mp3", ".wav")
+    audio.export(wav_path, format="wav")
+    recognizer = sr.Recognizer()
+    with sr.AudioFile(wav_path) as source:
+        audio_data = recognizer.record(source)
+    text = recognizer.recognize_google(audio_data)
+    with open(output_file, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.remove(wav_path)
 
-# B6: Web Scraping
-def B6(url, output_filename):
-    import requests
-    result = requests.get(url).text
-    with open(output_filename, 'w') as file:
-        file.write(str(result))
+def B9(markdown_file: str, output_file: str):
+    """Convert Markdown to HTML."""
+    markdown_file = ensure_data_path(markdown_file)
+    output_file = ensure_data_path(output_file)
+    with open(markdown_file, "r", encoding="utf-8") as md:
+        html = markdown.markdown(md.read())
+    with open(output_file, "w", encoding="utf-8") as f:
+        f.write(html)
 
-# B7: Image Processing
-def B7(image_path, output_path, resize=None):
-    from PIL import Image
-    if not B12(image_path):
-        return None
-    if not B12(output_path):
-        return None
-    img = Image.open(image_path)
-    if resize:
-        img = img.resize(resize)
-    img.save(output_path)
-
-# B8: Audio Transcription
-# def B8(audio_path):
-#     import openai
-#     if not B12(audio_path):
-#         return None
-#     with open(audio_path, 'rb') as audio_file:
-#         return openai.Audio.transcribe("whisper-1", audio_file)
-
-# B9: Markdown to HTML Conversion
-def B9(md_path, output_path):
-    import markdown
-    if not B12(md_path):
-        return None
-    if not B12(output_path):
-        return None
-    with open(md_path, 'r') as file:
-        html = markdown.markdown(file.read())
-    with open(output_path, 'w') as file:
-        file.write(html)
-
-# B10: API Endpoint for CSV Filtering
-# from flask import Flask, request, jsonify
-# app = Flask(__name__)
-# @app.route('/filter_csv', methods=['POST'])
-# def filter_csv():
-#     import pandas as pd
-#     data = request.json
-#     csv_path, filter_column, filter_value = data['csv_path'], data['filter_column'], data['filter_value']
-#     B12(csv_path)
-#     df = pd.read_csv(csv_path)
-#     filtered = df[df[filter_column] == filter_value]
-#     return jsonify(filtered.to_dict(orient='records'))
+@app.get("/filter_csv")
+def B10(csv_file: str, column: str, value: str):
+    """Filter a CSV file and return JSON."""
+    csv_file = ensure_data_path(csv_file)
+    with open(csv_file, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        results = [row for row in reader if row.get(column) == value]
+    return results
